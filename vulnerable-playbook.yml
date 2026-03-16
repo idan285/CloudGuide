@@ -1,0 +1,62 @@
+# -----------------------------------------------------------------------
+# VULNERABLE ANSIBLE PLAYBOOK — FOR CHECKMARX ONE KICS DEMO ONLY
+# This file contains intentional misconfigurations for training purposes.
+# DO NOT use in any real environment.
+# -----------------------------------------------------------------------
+
+---
+- name: Deploy Demo Application
+  hosts: all
+
+  # VULNERABILITY: become + become_user root means every task in this
+  # playbook runs with full root privileges on the remote host.
+  # KICS Rule: "Privilege Escalation Using Become Plugin"
+  become: yes
+  become_user: root
+
+  vars:
+    app_name: "demo-app"
+
+    # VULNERABILITY: hardcoded database password stored in plaintext
+    # inside the playbook. Anyone with repo access can read this.
+    # KICS Rule: "Ansible Vault Not Used To Protect Sensitive Data"
+    db_password: "SuperSecret123!"
+
+    # VULNERABILITY: hardcoded API key for a GCP service account.
+    # Should be stored in Ansible Vault or GCP Secret Manager.
+    gcp_api_key: "AIzaSyD-FAKEKEYEXAMPLE1234567890abcdef"
+
+  tasks:
+
+    - name: Disable firewall completely
+      # VULNERABILITY: stopping and disabling the firewall removes
+      # all network-level protection from this host.
+      # KICS Rule: "Firewall Service Disabled"
+      service:
+        name: ufw
+        state: stopped
+        enabled: no
+
+    - name: Configure SSH to skip host key verification
+      # VULNERABILITY: disabling host key checking exposes the connection
+      # to man-in-the-middle attacks.
+      # KICS Rule: "Host Key Checking Disabled"
+      lineinfile:
+        path: /etc/ansible/ansible.cfg
+        line: "host_key_checking = False"
+
+    - name: Set application database password as environment variable
+      # VULNERABILITY: writing the password to /etc/environment makes it
+      # readable by all users on the system.
+      lineinfile:
+        path: /etc/environment
+        line: "DB_PASSWORD={{ db_password }}"
+
+    - name: Copy GCP credentials file
+      # VULNERABILITY: copying a credentials file to a world-readable path.
+      copy:
+        content: "{{ gcp_api_key }}"
+        dest: /tmp/gcp_credentials.json
+        # VULNERABILITY: mode 0644 means all users on the system can read
+        # the credentials file.
+        mode: "0644"

@@ -1,0 +1,75 @@
+# -----------------------------------------------------------------------
+# VULNERABLE KUBERNETES MANIFEST — FOR CHECKMARX ONE KICS DEMO ONLY
+# This file contains intentional misconfigurations for training purposes.
+# DO NOT deploy to any real cluster (including GKE).
+# -----------------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insecure-demo-app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: insecure-demo-app
+  template:
+    metadata:
+      labels:
+        app: insecure-demo-app
+    spec:
+      containers:
+        - name: demo-container
+
+          # VULNERABILITY: using the :latest tag means the exact image
+          # version is unknown and may change between deployments.
+          # KICS Rule: "Image Tag Not Specified"
+          image: nginx:latest
+
+          ports:
+            - containerPort: 80
+
+          # VULNERABILITY: no resource requests or limits defined.
+          # A misbehaving container can consume all CPU/memory on the node,
+          # causing a denial of service for other workloads.
+          # KICS Rule: "CPU and Memory Limits Not Set"
+          # resources: {}   <-- intentionally omitted
+
+          securityContext:
+
+            # VULNERABILITY: privileged: true gives the container nearly
+            # full access to the host kernel — equivalent to running as
+            # root directly on the node. Critical finding.
+            # KICS Rule: "Container Is Privileged"
+            privileged: true
+
+            # VULNERABILITY: running as UID 0 (root) inside the container.
+            # If there is a container escape, the attacker has root on the node.
+            # KICS Rule: "Container Running As Root User"
+            runAsUser: 0
+
+            # VULNERABILITY: allowPrivilegeEscalation permits the process
+            # inside the container to gain more privileges than its parent.
+            # KICS Rule: "Privilege Escalation Allowed"
+            allowPrivilegeEscalation: true
+
+          # VULNERABILITY: no liveness or readiness probes defined.
+          # Kubernetes cannot detect if the app has crashed or is unhealthy.
+          # KICS Rule: "Liveness Probe Not Defined" / "Readiness Probe Not Defined"
+          # livenessProbe: {}   <-- intentionally omitted
+          # readinessProbe: {}  <-- intentionally omitted
+
+          env:
+            # VULNERABILITY: sensitive value passed as a plaintext env var
+            # instead of using a Kubernetes Secret or GCP Secret Manager.
+            # KICS Rule: "Sensitive Information Exposed In Environment Variables"
+            - name: DB_PASSWORD
+              value: "SuperSecret123!"
+
+      # VULNERABILITY: automountServiceAccountToken is not set to false.
+      # By default, Kubernetes mounts a service account token into every pod.
+      # In GKE, this token can be used to call the GCP metadata server
+      # and potentially escalate privileges.
+      # KICS Rule: "Automount Service Account Token Enabled"
+      # automountServiceAccountToken: false  <-- intentionally omitted
